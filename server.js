@@ -11,7 +11,7 @@ const pdfParse = require('pdf-parse');
 
 app.use(express.json());
 app.use(cors({
-    origin: 'http://localhost:5173', // Adjust this to your frontend's URL
+    origin: 'https://jobplanate.netlify.app', // Adjust this to your frontend's URL
     credentials: true, // Allow credentials (cookies, authorization headers, etc.)
     methods: ['GET', 'POST', 'PUT', 'DELETE','PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization']
