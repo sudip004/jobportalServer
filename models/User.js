@@ -8,8 +8,7 @@ const userSchema = new mongoose.Schema({
         type: String,
         lowercase: true,
         unique: true,
-        sparse: true,
-        index: true
+        sparse: true
     },
     password: { 
         type: String,
@@ -32,15 +31,14 @@ const userSchema = new mongoose.Schema({
     }],
     createdAt: { 
         type: Date,
-        default: Date.now,
-        index: true
+        default: Date.now
     }
 }, {
     timestamps: true
 });
 
 // Create indexes for faster queries
-userSchema.index({ email: 1 });
+// Note: email index is automatically created by unique: true
 userSchema.index({ createdAt: -1 });
 
 const User = mongoose.model('User', userSchema);
