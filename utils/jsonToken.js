@@ -7,7 +7,7 @@ const generateToken = (user) => {
     };
     const secret ="sudipbasak"
     const options = {
-        expiresIn: '1h',
+        expiresIn: '24h',
     };  
     return jwt.sign(payload, secret, options);
 }

@@ -46,7 +46,7 @@ router.post('/register', upload.single('profilePic'), async (req, res) => {
     });
     newUser.save()
         .then(user => {
-            res.status(201).json({ message: 'User created successfully', user });
+            res.status(201).json({ message: 'User created successfully', user: user });
         })
         .catch(err => {
             console.error(err);
@@ -64,7 +64,7 @@ router.post('/login', async (req, res) => {
         if (!user) {
             return res.status(401).json({ message: 'Invalid email or password first register' });
         }
-        console.log(user);
+        
         if (user[0].password !== password) {
             return res.status(401).json({ message: 'Invalid email or password second wrong password' });
         }
@@ -74,7 +74,7 @@ router.post('/login', async (req, res) => {
             secure: process.env.NODE_ENV === 'production',
         });
 
-        res.status(200).json({ message: 'Login successful', user: user[0] });
+        res.status(200).json({ message: 'Login successful', user: user });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
@@ -82,7 +82,7 @@ router.post('/login', async (req, res) => {
 });
 
 // metadata
-router.get('/me', (req, res) => {
+router.get('/me', async(req, res) => {
     const token = req.cookies.jobtoken;
     if (!token) {
         return res.status(401).json({ message: 'No token provided' });
@@ -91,7 +91,12 @@ router.get('/me', (req, res) => {
         const jwt = require('jsonwebtoken');
         const secret = "sudipbasak";
         const decoded = jwt.verify(token, secret);
-        res.status(200).json({ message: 'Token is valid', user: decoded });
+        const userId = decoded?.id;
+        const user = await User.findById(userId).select('-password');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.status(200).json({ user });
     } catch (error) {
         console.error(error);
         res.status(401).json({ message: 'Invalid token' });
@@ -276,11 +281,10 @@ router.patch('/applyjob/:id', upload.single('pdf'), async (req, res) => {
 // this portion is done---------------------------------------------------------------->>>>>>>>>>>>
 
 //---------------------------SAVED JOBS---------------------------->>>>>>>>
-router.patch('/savejob/:id', async (req, res) => {
-    const { id } = req.params;// Extract the job ID from the request parameters
-    const { userId } = req.body;// Extract the user ID from the request body
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+router.patch('/savethisjob', async (req, res) => {
+    const { userId,jobId } = req.body;// Extract the user ID from the request body
+       console. log("Saving job with ID:", jobId, "for user ID:", userId);
+    if (!mongoose.Types.ObjectId.isValid(jobId)) {
         return res.status(400).json({ message: 'Invalid job ID' });
     }
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
@@ -288,7 +292,7 @@ router.patch('/savejob/:id', async (req, res) => {
     }
 
     try {
-        const job = await JobModel.findById(id);
+        const job = await JobModel.findById(jobId);
         if (!job) {
             return res.status(404).json({ message: 'Job not found' });
         }
@@ -299,14 +303,15 @@ router.patch('/savejob/:id', async (req, res) => {
         }
 
         // Prevent duplicate saves
-        if (user.savedPosts.includes(id)) {
+        if (user.savedPosts.includes(jobId)) {
             return res.status(400).json({ message: 'Job already saved' });
         }
 
-        user.savedPosts.push(id);
+        user.savedPosts.push(jobId);
         await user.save();
+        console.log("Saved job successfully");
 
-        res.status(200).json({ message: 'Job saved successfully', job });
+        res.status(200).json({ message: 'Job saved successfully', job ,success:true});
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
@@ -354,20 +359,23 @@ router.patch('/appliedjobs/:id', async (req, res) => {
 //--------------------------- MY APPLIED JOBS---------------------------->>>>>
 router.get('/myappliedjobs/:userId', async (req, res) => {
     const { userId } = req.params;
-
+    console.log("myyyappplied", userId);
     if (!mongoose.Types.ObjectId.isValid(userId)) {
         return res.status(400).json({ message: 'Invalid user ID' });
     }
 
     try {
-        const user = await User.findById(userId).populate('AppliedJobs');
+        const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        if (user.AppliedJobs.length === 0) {
-            return res.status(404).json({ message: 'No applied jobs found for this user' });
-        }
-        res.status(200).json({ message: 'Applied jobs retrieved successfully', appliedJobs: user.AppliedJobs });
+
+        // Fetch full job details for all applied jobs
+        const appliedJobs = await JobModel.find({
+            _id: { $in: user.AppliedJobs }
+        }).populate('creatorId', 'name profilePic');
+
+        res.status(200).json({ message: 'Applied jobs retrieved successfully', appliedJobs });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
@@ -378,95 +386,54 @@ router.get('/myappliedjobs/:userId', async (req, res) => {
 router.get('/mysavedjobs/:userId', async (req, res) => {
     const { userId } = req.params;
 
+    console.log("myysavvedd", userId);
+    
+
     if (!mongoose.Types.ObjectId.isValid(userId)) {
         return res.status(400).json({ message: 'Invalid user ID' });
     }
 
     try {
-        const user = await User.findById(userId).populate('savedPosts');
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-        if (user.savedPosts.length === 0) {
-            return res.status(404).json({ message: 'No saved jobs found for this user' });
-        }
-        res.status(200).json({ message: 'Saved jobs retrieved successfully', savedJobs: user.savedPosts });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-
-
-
-router.patch('/savejob/:id', async (req, res) => {
-    const { id } = req.params;
-    const { userId } = req.body;
-
-    console.log("Saving job with ID:", id, "for user ID:", userId);
-
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ message: 'Invalid job ID' });
-    }
-    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
-        return res.status(400).json({ message: 'Invalid user ID' });
-    }
-
-    try {
-        const job = await JobModel.findById(id);
-        if (!job) {
-            return res.status(404).json({ message: 'Job not found' });
-        }
-
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        if (!user.savedPosts.includes(id)) {
-            user.savedPosts.push(id);
-            await user.save();
-        }
+        // Fetch full job details for all saved jobs
+        const savedJobs = await JobModel.find({
+            _id: { $in: user.savedPosts }
+        }).populate('creatorId', 'name profilePic');
 
-        return res.status(200).json({ message: 'Job saved successfully' });
-
+        res.status(200).json({ message: 'Saved jobs retrieved successfully', savedJobs });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-
+//--------------------------- UNSAVE JOBS---------------------------->>>>>
 router.delete('/savejob/:id', async (req, res) => {
-  const { id } = req.params;
-  const { userId } = req.body;
-
-  if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ message: 'Invalid ID(s)' });
-  }
-
-  try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    user.savedPosts = user.savedPosts.filter(savedId => savedId.toString() !== id);
-    await user.save();
-
-    return res.status(200).json({ message: 'Job unsaved successfully' });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: 'Server error' });
-  }
+    const { id } = req.params;
+    const { userId } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ message: 'Invalid ID(s)' });
+    }
+    try {
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        user.savedPosts = user.savedPosts.filter(savedId => savedId.toString() !== id);
+        await user.save();
+        return res.status(200).json({ message: 'Job unsaved successfully' });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ message: 'Server error' });
+    }
 });
 
 
 
-
-
-
 //--------------------------- MY CREATED JOBS---------------------------->>>
+
 router.get('/mycreatedjobs/:userId', async (req, res) => {
     const { userId } = req.params;
 
