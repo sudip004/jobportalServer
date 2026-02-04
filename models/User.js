@@ -6,7 +6,10 @@ const userSchema = new mongoose.Schema({
     },
     email: { 
         type: String,
-        lowercase: true
+        lowercase: true,
+        unique: true,
+        sparse: true,
+        index: true
     },
     password: { 
         type: String,
@@ -17,25 +20,28 @@ const userSchema = new mongoose.Schema({
     },
     savedPosts: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Job' // Assuming you have a Post model
+        ref: 'Job'
     }],
     AppliedJobs: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Job' // Assuming you have a Job model
+        ref: 'Job'
     }],
     Createdjobs: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Job' // Assuming you have a Job model
+        ref: 'Job'
     }],
     createdAt: { 
         type: Date,
-        default: Date.now
+        default: Date.now,
+        index: true
     }
 }, {
     timestamps: true
 });
 
+// Create indexes for faster queries
+userSchema.index({ email: 1 });
+userSchema.index({ createdAt: -1 });
 
 const User = mongoose.model('User', userSchema);
 module.exports = User;
-// This code defines a Mongoose schema for a User model in a Node.js application.

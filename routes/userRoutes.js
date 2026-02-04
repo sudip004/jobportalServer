@@ -1,12 +1,17 @@
 const router = require('express').Router();
 const multer = require('multer');
-const cloudinary = require('../utils/Cloudinary'); // Adjust the path as necessary
+const cloudinary = require('../utils/Cloudinary');
+const cache = require('../utils/cache');
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 const mongoose = require('mongoose');
-const User = require('../models/User'); // Adjust the path as necessary
-const JobModel = require('../models/Jobs'); // Adjust the path as necessary
+const User = require('../models/User');
+const JobModel = require('../models/Jobs');
 const pdfParse = require('pdf-parse');
+const {generateToken} = require("../utils/jsonToken")
+const cookieParser = require('cookie-parser');
+
+router.use(cookieParser());
 
 router.post('/register', upload.single('profilePic'), async (req, res) => {
     const { name, email, password } = req.body;
@@ -55,17 +60,52 @@ router.post('/login', async (req, res) => {
         return res.status(400).json({ message: 'Email and password are required' });
     }
     try {
-        const user = await User.find({ email, password });
+        const user = await User.find({ email });
         if (!user) {
             return res.status(401).json({ message: 'Invalid email or password first register' });
         }
-        res.status(200).json({ message: 'Login successful', user });
+        console.log(user);
+        if (user[0].password !== password) {
+            return res.status(401).json({ message: 'Invalid email or password second wrong password' });
+        }
+        const token = generateToken(user[0]);
+        res.cookie('jobtoken', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+        });
+
+        res.status(200).json({ message: 'Login successful', user: user[0] });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
+// metadata
+router.get('/me', (req, res) => {
+    const token = req.cookies.jobtoken;
+    if (!token) {
+        return res.status(401).json({ message: 'No token provided' });
+    }
+    try {
+        const jwt = require('jsonwebtoken');
+        const secret = "sudipbasak";
+        const decoded = jwt.verify(token, secret);
+        res.status(200).json({ message: 'Token is valid', user: decoded });
+    } catch (error) {
+        console.error(error);
+        res.status(401).json({ message: 'Invalid token' });
+    }
+});
+
+// --------------------------LOGOUT USER----------------------------
+router.post('/logout', (req, res) => {
+    res.clearCookie('jobtoken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+    });
+    res.status(200).json({ message: 'Logout successful' });
+});
 
 // --------------------------CREATE JOB----------------------------
 // This route allows users to create a job posting with an optional company picture.
@@ -108,6 +148,8 @@ router.post('/createjob', upload.single('companyPic'), async (req, res) => {
 
     newJob.save()
         .then(job => {
+            // Invalidate cache when new job is created
+            cache.delete('all_jobs');
             res.status(201).json({ message: 'Job created successfully', job });
         })
         .catch(err => {
@@ -118,10 +160,24 @@ router.post('/createjob', upload.single('companyPic'), async (req, res) => {
 
 
 // --------------------------GET ALL JOBS----------------------------
-// This route retrieves all job postings from the database.
+// This route retrieves all job postings from the database with caching.
 router.get('/getalljobs', async (req, res) => {
     try {
-        const jobs = await JobModel.find().populate('creatorId', 'name profilePic');
+        // Check cache first
+        const cachedJobs = cache.get('all_jobs');
+        if (cachedJobs) {
+            return res.status(200).json({ message: 'Jobs retrieved successfully', jobs: cachedJobs });
+        }
+
+        // Use lean() for faster queries (read-only)
+        const jobs = await JobModel.find()
+            .populate('creatorId', 'name profilePic')
+            .lean()
+            .exec();
+        
+        // Cache for 5 minutes
+        cache.set('all_jobs', jobs, 300);
+        
         res.status(200).json({ message: 'Jobs retrieved successfully', jobs });
     } catch (error) {
         console.error(error);
@@ -445,6 +501,8 @@ router.delete('/deletejob/:id', async (req, res) => {
         if (!job) {
             return res.status(404).json({ message: 'Job not found' });
         }
+        // Invalidate cache when job is deleted
+        cache.delete('all_jobs');
         res.status(200).json({ message: 'Job deleted successfully', job });
     } catch (error) {
         console.error(error);
